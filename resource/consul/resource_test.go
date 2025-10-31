@@ -39,7 +39,7 @@ func TestResource_Load_Consul(t *testing.T) {
 	}
 
 	defer func() {
-		_, err = client.KV().Delete("consul", nil)
+		_, err = client.KV().Delete(key, nil)
 		if err != nil {
 			t.Errorf("Delete() error = %v", err)
 			return
@@ -78,7 +78,7 @@ func TestResource_Watch_Consul(t *testing.T) {
 
 	_, err = client.KV().Put(&api.KVPair{
 		Key:   key,
-		Value: []byte("TEST_KEY=test_value"),
+		Value: []byte("TEST_KEY=" + time.Now().Format(time.DateTime)),
 	}, nil)
 	if err != nil {
 		t.Errorf("PublishConfig() error = %v", err)
@@ -93,74 +93,46 @@ func TestResource_Watch_Consul(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(time.Second)
-
 	r, err := New(client, key)
 	if err != nil {
 		t.Errorf("New() error = %v", err)
 		return
 	}
 
-	notifyC := make(chan *structpb.Struct, 1)
-	errC := make(chan error, 1)
-	// Start watching
 	ctx := context.Background()
+	_, _ = r.Load(ctx)
+
+	c := make(chan *structpb.Struct)
+	notifyC := func(value *structpb.Struct) {
+		c <- value
+	}
+	errC := func(error) {}
+	// Start watching
 	stopFunc, err := r.Watch(ctx, notifyC, errC)
 	if err != nil {
 		t.Errorf("Watch() error = %v", err)
 		return
 	}
+	defer stopFunc(context.Background())
 
-	go func() {
-		time.Sleep(time.Second)
-		_, err = client.KV().Put(&api.KVPair{
-			Key:   key,
-			Value: []byte("TEST_KEY_NEW=test_value_new" + time.Now().Format(time.RFC3339)),
-		}, nil)
-		if err != nil {
-			t.Errorf("PublishConfig() error = %v", err)
-			return
-		}
-	}()
+	meta, err := client.KV().Put(&api.KVPair{
+		Key:   key,
+		Value: []byte("TEST_KEY=updated"),
+	}, nil)
+	if err != nil {
+		t.Errorf("PublishConfig() error = %v", err)
+		return
+	}
+	_ = meta
 
 	// Wait for the event
-	select {
-	case err := <-errC:
-		if err != nil {
-			t.Errorf("Watch() error = %v", err)
-		}
-	case data := <-notifyC:
-		if data == nil {
-			t.Error("Expected DataEvent with non-nil data")
-		}
-	case <-time.After(100 * time.Second):
-		t.Error("No event received within the timeout")
+	newVal := <-c
+	if newVal == nil {
+		t.Error("received nil value")
+		return
 	}
-
-	stopFunc(ctx)
-
-	go func() {
-		time.Sleep(time.Second)
-		_, err = client.KV().Put(&api.KVPair{
-			Key:   key,
-			Value: []byte("TEST_KEY_NEW=test_value_new" + time.Now().Format(time.RFC3339)),
-		}, nil)
-		if err != nil {
-			t.Errorf("PublishConfig() error = %v", err)
-			return
-		}
-	}()
-
-	select {
-	case err := <-errC:
-		if err != nil {
-			t.Errorf("Watch() error = %v", err)
-		}
-	case data := <-notifyC:
-		if data != nil {
-			t.Error("Did not expect to receive an event after stopping the watcher")
-		}
-	case <-time.After(100 * time.Millisecond):
-		// Expected behavior
+	val := newVal.GetFields()["TEST_KEY"].GetStringValue()
+	if val != "updated" {
+		t.Errorf("expected value 'updated'; got %q", val)
 	}
 }

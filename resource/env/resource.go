@@ -46,8 +46,12 @@ func (r *Resource) Load(ctx context.Context) (*structpb.Struct, error) {
 	if err != nil {
 		return nil, err
 	}
+	parsed, err := r.formatter.Parse(data)
+	if err != nil {
+		return nil, err
+	}
 	r.pre.Store(data)
-	return r.formatter.Parse(data)
+	return parsed, nil
 }
 
 // load collects and prepares environment variables data
@@ -92,6 +96,13 @@ func (r *Resource) Watch(ctx context.Context, notifyFunc resource.NotifyFunc, er
 		return nil, fmt.Errorf("gonfig: notifyFunc is nil")
 	}
 
+	// Set default error handler if none provided
+	if errFunc == nil {
+		errFunc = func(err error) {
+			slog.Error("gonfig: failed to watch env", slog.String("error", err.Error()))
+		}
+	}
+
 	// Check if context is already cancelled
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -102,13 +113,6 @@ func (r *Resource) Watch(ctx context.Context, notifyFunc resource.NotifyFunc, er
 	stop := func(ctx context.Context) error {
 		close(stopC)
 		return nil
-	}
-
-	// Set default error handler if none provided
-	if errFunc == nil {
-		errFunc = func(err error) {
-			slog.Error("gonfig: failed to watch env", slog.String("error", err.Error()))
-		}
 	}
 
 	// Start watching in a separate goroutine
