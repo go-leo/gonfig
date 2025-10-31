@@ -1,11 +1,11 @@
 syntax = "proto3";
-package leo.config.example;
+package leo.gonfig.example;
 option go_package = "github.com/go-leo/gonfig/example/configs;configs";
 
-import "leo/config/annotations.proto";
+import "leo/gonfig/annotations.proto";
 
 message Application {
-  option (leo.config.enable) = true;
+  option (leo.gonfig.enable) = true;
   string LEO_RUN_ENV = 1;
   GRPC grpc = 2;
   Redis redis = 4;

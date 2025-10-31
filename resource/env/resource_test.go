@@ -5,7 +5,6 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ func init() {
 
 func TestLoad(t *testing.T) {
 	// 创建测试资源
-	resource, err := New("TEST_")
+	resource, err := New("TEST_", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,14 +56,19 @@ func TestLoad(t *testing.T) {
 
 func TestWatch(t *testing.T) {
 	// 创建测试资源
-	resource, err := New("TEST_")
+	resource, err := New("TEST_", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 准备测试通道
-	notifyC := make(chan *structpb.Struct)
-	errC := make(chan error)
+	c := make(chan *structpb.Struct)
+	notifyC := func(value *structpb.Struct) {
+		c <- value
+	}
+	errC := func(error) {
+		t.Error(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
@@ -79,36 +83,17 @@ func TestWatch(t *testing.T) {
 		}
 	}()
 
-	// 准备同步机制
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	// 启动监听协程
-	go func() {
-		defer wg.Done()
-		select {
-		case  <-errC:
-			
-		case newVal := <-notifyC:
-			if newVal == nil {
-				t.Error("received nil value")
-				return
-			}
-			val := newVal.GetFields()["TEST_KEY"].GetStringValue()
-			if val != "updated" {
-				t.Errorf("expected value 'updated'; got %q", val)
-			}
-		case <-ctx.Done():
-			t.Error("timeout waiting for update")
-		}
-	}()
-
-	time.Sleep(time.Second)
-
 	// 修改环境变量
 	os.Setenv("TEST_KEY", "updated")
 	defer os.Unsetenv("TEST_KEY")
 
-	// 确保测试完成
-	wg.Wait()
+	newVal := <-c
+	if newVal == nil {
+		t.Error("received nil value")
+		return
+	}
+	val := newVal.GetFields()["TEST_KEY"].GetStringValue()
+	if val != "updated" {
+		t.Errorf("expected value 'updated'; got %q", val)
+	}
 }

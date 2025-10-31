@@ -1,3 +1,4 @@
+// Package resource defines the core interface and types for configuration resources.
 package resource
 
 import (
@@ -5,6 +6,17 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// NotifyFunc defines the function type for notification callbacks.
+// The value parameter is a pointer to structpb.Struct.
+type NotifyFunc func(value *structpb.Struct)
+
+// ErrFunc defines the function type for error handling callbacks.
+type ErrFunc func(err error)
+
+// StopFunc defines the function type for stopping monitoring and cleanup.
+// It accepts a context for graceful shutdown and returns any cleanup error.
+type StopFunc func(context.Context) error
 
 // Resource defines the core interface for configuration resource providers.
 // Implementations should handle both synchronous loading and change monitoring
@@ -22,11 +34,11 @@ type Resource interface {
 	// Watch establishes a continuous monitoring of configuration changes.
 	// Args:
 	//   - ctx: Context for cancellation
-	//   - notifyC: Channel for receiving configuration updates (send-only)
-	//   - errC: Channel for receiving monitoring errors (send-only)
+	//   - notifyFunc: Function for receiving configuration updates
+	//   - errFunc: Function for receiving monitoring errors
 	// Returns:
 	//   - func(context.Context) error: Cleanup function that stops watching,
 	//     takes context for graceful shutdown, returns any cleanup error
 	//   - error: Immediate error if watch setup fails
-	Watch(ctx context.Context, notifyC chan<- *structpb.Struct, errC chan<- error) (func(context.Context) error, error)
+	Watch(ctx context.Context, notifyFunc NotifyFunc, errFunc ErrFunc) (StopFunc, error)
 }

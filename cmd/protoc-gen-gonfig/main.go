@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	config "github.com/go-leo/gonfig/cmd/protoc-gen-config/gen"
+	config "github.com/go-leo/gonfig/cmd/protoc-gen-gonfig/gen"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/types/pluginpb"
 )
@@ -14,7 +14,7 @@ import (
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Fprintf(os.Stdout, "%v %v\n", filepath.Base(os.Args[0]), "v0.0.1")
-		os.Exit(0)
+		return
 	}
 
 	var flags flag.FlagSet

@@ -1,4 +1,4 @@
-package config
+package gonfig
 
 import (
 	// Environment variable format support
@@ -16,8 +16,4 @@ import (
 	// YAML format support
 	// Automatically registers yaml format decoder when imported
 	_ "github.com/go-leo/gonfig/format/yaml"
-
-	// Sample merger implementation
-	// Automatically registers sample merger when imported
-	_ "github.com/go-leo/gonfig/merge/sample"
 )

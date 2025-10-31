@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -44,10 +43,6 @@ func TestNew(t *testing.T) {
 			if resource == nil {
 				t.Errorf("expected non-nil Resource")
 			} else {
-				ext := strings.TrimPrefix(filepath.Ext(tt.filename), ".")
-				if resource.ext != ext {
-					t.Errorf("expected ext %q; got %q", ext, resource.ext)
-				}
 				if resource.filename != tt.filename {
 					t.Errorf("expected filename %q; got %q", tt.filename, resource.filename)
 				}
@@ -92,7 +87,7 @@ key:
 
 func TestWatch(t *testing.T) {
 	tempDir := t.TempDir()
-	testFile := filepath.Join(tempDir, "test.yaml")
+	testFile := filepath.Join(tempDir, time.Now().Format(time.DateTime)+"_test.yaml")
 	content := `
 key:
   nested_key: value
@@ -104,40 +99,34 @@ key:
 	if err != nil {
 		t.Fatal(err)
 	}
-	notifyC := make(chan *structpb.Struct)
-	errC := make(chan error)
-	stop, err := resource.Watch(ctx, notifyC, errC)
+
+	c := make(chan *structpb.Struct)
+	notifyFunc := func(newValue *structpb.Struct) {
+		if newValue == nil {
+			t.Error("expected non-nil struct from watch")
+			return
+		}
+		c <- newValue
+	}
+	errFunc := func(err error) {
+		t.Errorf("Error: %v", err)
+	}
+
+	stop, err := resource.Watch(ctx, notifyFunc, errFunc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stop(ctx)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	// 监听第一次加载事件
-	go func() {
-		defer wg.Done()
-		select {
-		case <-ctx.Done():
-			t.Error("timeout waiting for initial load")
-		case newValue := <-notifyC:
-			if newValue == nil {
-				t.Error("expected non-nil struct from watch")
-				return
-			}
-			value := newValue.GetFields()["key"].GetStructValue().GetFields()["nested_key"].GetStringValue()
-			if value != "value" {
-				t.Errorf("expected value 'value'; got %q", value)
-			}
-		}
-	}()
-
-	time.Sleep(time.Second)
 	if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	wg.Wait()
+	newValue := <-c
+	value := newValue.GetFields()["key"].GetStructValue().GetFields()["nested_key"].GetStringValue()
+	if value != "value" {
+		t.Errorf("expected value 'value'; got %q", value)
+	}
 
 	// 修改文件以触发 Watcher
 	newContent := `
@@ -149,18 +138,9 @@ key:
 		t.Fatal(err)
 	}
 
-	// 等待第二次更新
-	select {
-	case <-ctx.Done():
-		t.Error("timeout waiting for file update")
-	case newValue := <-notifyC:
-		if newValue == nil {
-			t.Error("expected non-nil struct from watch after update")
-			return
-		}
-		value := newValue.GetFields()["key"].GetStructValue().GetFields()["nested_key"].GetStringValue()
-		if value != "updated_value" {
-			t.Errorf("expected value 'updated_value'; got %q", value)
-		}
+	newValue = <-c
+	value = newValue.GetFields()["key"].GetStructValue().GetFields()["nested_key"].GetStringValue()
+	if value != "updated_value" {
+		t.Errorf("expected value 'updated_value'; got %q", value)
 	}
 }
